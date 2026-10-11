@@ -153,3 +153,30 @@ M3 — 메시지 빌더 + 텔레그램 전송 (`--force-notify` 추가, apply_la
 
 ### 다음 단계
 M4 — GitHub Actions 연결 (워크플로 수동 실행 → state 커밋·push 확인)
+
+---
+
+## 2026-10-11 — M4: GitHub Actions 연결 완료 (자동화 라이브)
+
+### 한 일
+1. 원격 저장소 연결: `https://github.com/roadway2423-art/nvidia-build-watch.git` (HTTPS, Git Credential Manager 브라우저 인증)
+2. `main` push — M1~M3 전체 이력 업로드
+3. 저장소 secrets 등록: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (웹 UI)
+4. Actions 탭에서 `workflow_dispatch` 수동 실행 1회
+
+### 검증 결과
+- 실행 성공: GitHub 러너에서 수집 → diff(변경 없음 → 무음 정상) → state 커밋 → push까지 전 파이프라인 동작
+- 커밋 `809d765` "chore: snapshot 2026-10-11" (author: **watch-bot**) — 로컬 pull로 확인
+- `state.json` updated_at이 러너 시각(UTC)으로 갱신 확인 → **M4 완료 기준 충족**
+
+### 운영 개시
+- 매일 00:00 UTC(09:00 KST, 지연 ±수십 분 가능) 자동 실행 — **이 PC가 꺼져 있어도 동작**
+- 매일 state 커밋이 발생 → 60일 비활성화 규칙 자동 방지
+
+### 비고
+- CI 러너는 UTC 기준 — updated_at이 +00:00으로 기록됨(정상). 로컬 실행은 +09:00
+- 스냅샷 커밋 작성자는 workflow가 지정한 watch-bot. 개발 커밋 작성자는 아직 임시 `user <user@local>`
+
+### 다음 단계
+M5 — Tier 2(Playwright 렌더링): build.nvidia.com 배너에서 "N일 남음" 추출.
+시작 전 사용자가 브라우저 개발자도구로 모델 카드 DOM 구조를 확인해야 함(셀렉터 확정).

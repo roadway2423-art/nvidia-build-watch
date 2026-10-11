@@ -31,8 +31,8 @@
 |---|---|---|---|---|
 | 1 | §6 `parse_countdown` 4번째 패턴(`available until <날짜>`)의 캡처 그룹이 날짜 문자열이라 `isdigit()`에서 항상 버려짐 — 작동하지 않는 죽은 코드. `from datetime import date`도 미사용 | `src/collectors/tier2_render.py` (M5) | 날짜 패턴은 별도 분기에서 `datetime.strptime`으로 파싱 후 `(deadline - today).days`를 반환 | ☐ |
 | 2 | Appendix B: (1) 429 재시도 3회 소진 후 조용히 종료(알림 유실) (2) 빈 텍스트일 때 `or [""]`가 빈 메시지를 그대로 전송(400 에러) | `src/notify.py` (M4) | 재시도 소진 시 예외 발생(실패를 드러냄), 빈 텍스트는 진입부에서 가드(전송 스킵) | ☐ |
-| 3 | Tier 1 실패·빈 응답 시 diff 엔진이 "전 모델 제거"로 오판 | `src/main.py`(M1 1차 방어), `src/diff.py`(M2 이중 방어) | `tier1_ok=false`이거나 수집된 모델이 0건이면 diff를 스킵하고 오류 알림만 보낸다 | ☑ 1차(M1) |
-| 4 | §6 "신규 무료 모델"을 `in_api_list` false→true로 판정 — §3.1("이 응답에 무료 여부가 없다")과 자기모순 | `src/diff.py` (M2) | 이벤트 명칭을 "신규 모델 등록"으로 변경. "신규 무료"는 `free_badge` false→true로만 판정 | ☐ |
+| 3 | Tier 1 실패·빈 응답 시 diff 엔진이 "전 모델 제거"로 오판 | `src/main.py`(M1 1차 방어), `src/diff.py`(M2 이중 방어) | `tier1_ok=false`이거나 수집된 모델이 0건이면 diff를 스킵하고 오류 알림만 보낸다 | ☑ 완료(M1+M2) |
+| 4 | §6 "신규 무료 모델"을 `in_api_list` false→true로 판정 — §3.1("이 응답에 무료 여부가 없다")과 자기모순 | `src/diff.py` (M2) | 이벤트 명칭을 "신규 모델 등록"으로 변경. "신규 무료"는 `free_badge` false→true로만 판정 | ☑ M2 적용 |
 
 ### 이 커밋에서 만든 것
 - 폴더 구조 전체 (설계 §9 + `docs/`, `logs/`)
@@ -86,3 +86,39 @@ M1 — Tier 1 수집기 + 상태 저장 (design.md §10.2 1단계 프롬프트 �
 
 ### 다음 단계
 M2 — diff 엔진 + 테스트 (수정 #3 이중 방어, #4 이벤트 명칭 정정 포함)
+
+---
+
+## 2026-10-11 — M2: diff 엔진 + normalize 관측 보존 규칙
+
+### 구현한 것
+| 파일 | 내용 |
+|---|---|
+| `src/diff.py` | `detect()` — §6 이벤트 감지(수정 #4 반영), `apply_last_notified()` — 카운트다운 중복 알림 갱신(전송 성공 후 호출 규약) |
+| `src/normalize.py` | 관측 보존 규칙 — Tier 2가 오늘 못 본 모델은 prev의 free_badge·deadline 유지, days_left는 deadline에서 자동 재계산 |
+| `src/main.py` | diff 연결 — 변경 시 이벤트 출력 후 state 저장 |
+| `tests/test_diff.py` | 15개 케이스 (픽스처 시나리오 + 전이별 단위 + 가드 3종 + dedup) |
+| `tests/fixtures/state_prev_sample.json`·`state_new_sample.json` | 상태 스냅샷 픽스처 (제거/신규 무료/카운트다운 진입/신규 4종 시나리오) |
+
+### 이벤트 6종 (수정 #4 — 설계의 "신규 무료 모델" 1행을 2종으로 분리)
+`new_model`(신규 모델 등록: in_api_list 전이) · `new_free`(free_badge→true) · `removed` ·
+`deadline_new`(deadline 첫 등장) · `countdown`(days_left ≤ 임계값, 매일) · `free_to_paid`
+
+### 내린 결정
+1. 브랜드뉴 모델은 `new_model` 하나로 — `new_free`/`deadline_new`는 prev 레코드가 있을 때만 발사 (중복 억제)
+2. `free_to_paid`는 true→명시적 false만 판정. true→null(관측 없음)은 무시 — Tier 2 실패일 오판 방지
+3. `deadline_new`가 발사한 실행일엔 `countdown` 생략(중복). 다음 날부터 매일 알림
+4. days_left < 0(이미 만료)는 countdown 미발사 — 제거 이벤트가 뒤따름
+5. 첫 실행(이전 상태에 모델 0건)은 기준선 수집 — 이벤트 없음 (첫 알림이 80건 스팸 되는 것 방지)
+6. 수정 #3 이중 방어 완료: diff가 `tier1_ok=false` 또는 in_api 모델 0건이면 빈 결과.
+   "잔여 전원 동시 제거" 같은 극단 케이스도 이상 응답으로 취급해 스킵하는 트레이드오프
+7. normalize 관측 보존: Tier 2 결함으로 하루 배지를 못 읽어도 유료 전환/deadline 재등장 오판 없음 (M5 대비)
+8. dedup 확인 경로: detect는 새 상태의 last_notified를 읽는다 — normalize가 prev의 last_notified를
+   그대로 전달하므로 "전송 → apply_last_notified → 저장 → 다음 실행" 순서로 같은 날 중복이 차단된다
+
+### 검증 결과
+- `pytest`: 33개 전부 통과 / `ruff check .`: 클린
+- 실측: 연속 2회 실행 → 모두 "변경 없음"(이벤트 0건) — 기준선 대비 diff 정상 동작 확인
+
+### 다음 단계
+M3 — 메시지 빌더 + 텔레그램 전송 (`--force-notify` 추가, apply_last_notified 연결)

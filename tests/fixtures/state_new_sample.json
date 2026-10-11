@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-11T09:00:12+09:00",
+  "tier1_ok": true,
+  "tier2_ok": true,
+  "models": {
+    "a/alpha": {
+      "id": "a/alpha",
+      "owner": "a",
+      "name": "Alpha",
+      "first_seen": "2026-09-01",
+      "last_seen": "2026-10-10",
+      "in_api_list": false,
+      "free_badge": true,
+      "deadline": null,
+      "deadline_source": null,
+      "days_left": null,
+      "notes": []
+    },
+    "b/beta": {
+      "id": "b/beta",
+      "owner": "b",
+      "name": "Beta",
+      "first_seen": "2026-09-02",
+      "last_seen": "2026-10-11",
+      "in_api_list": true,
+      "free_badge": true,
+      "deadline": null,
+      "deadline_source": null,
+      "days_left": null,
+      "notes": []
+    },
+    "c/gamma": {
+      "id": "c/gamma",
+      "owner": "c",
+      "name": "Gamma",
+      "first_seen": "2026-09-03",
+      "last_seen": "2026-10-11",
+      "in_api_list": true,
+      "free_badge": true,
+      "deadline": "2026-10-18",
+      "deadline_source": "banner_text",
+      "days_left": 7,
+      "notes": []
+    },
+    "d/delta": {
+      "id": "d/delta",
+      "owner": "d",
+      "name": "Delta",
+      "first_seen": "2026-10-11",
+      "last_seen": "2026-10-11",
+      "in_api_list": true,
+      "free_badge": true,
+      "deadline": null,
+      "deadline_source": null,
+      "days_left": null,
+      "notes": []
+    }
+  },
+  "last_notified": {
+    "new": "2026-09-03",
+    "countdown": {}
+  }
+}

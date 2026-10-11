@@ -13,7 +13,11 @@ def build_state(
     today: str | None = None,
     now: datetime | None = None,
 ) -> dict:
-    """prev와 수집 결과를 병합한다. first_seen 유지, 미검출 모델은 in_api_list=false로 남는다."""
+    """prev와 수집 결과를 병합한다. first_seen 유지, 미검출 모델은 in_api_list=false로 남는다.
+
+    관측 규칙: Tier 2가 오늘 본 모델은 오늘 값을, 못 본 모델은 prev 값을 유지한다(최신 관측 승리).
+    days_left가 없으면 deadline에서 재계산한다 — Tier 2 결함 시 재알림/오판을 방지한다.
+    """
     today = today or date.today().isoformat()
     now = now or datetime.now().astimezone()
 
@@ -25,19 +29,29 @@ def build_state(
     for model_id in sorted(set(t1) | set(t2) | set(old)):
         prev_rec = old.get(model_id, {})
         t1_rec = t1.get(model_id)
-        t2_rec = t2.get(model_id, {})
+        seen_t2 = model_id in t2
+        source = t2[model_id] if seen_t2 else prev_rec
+
+        deadline = source.get("deadline")
+        days_left = source.get("days_left")
+        if days_left is None and deadline:
+            try:
+                days_left = (date.fromisoformat(deadline) - date.fromisoformat(today)).days
+            except ValueError:
+                days_left = None
+
         models[model_id] = {
             "id": model_id,
             "owner": (t1_rec or prev_rec).get("owner", ""),
-            "name": t2_rec.get("name"),
+            "name": source.get("name"),
             "first_seen": prev_rec.get("first_seen") or today,
-            "last_seen": today if (t1_rec or t2_rec) else prev_rec.get("last_seen"),
+            "last_seen": today if (t1_rec or seen_t2) else prev_rec.get("last_seen"),
             "in_api_list": t1_rec is not None,
-            "free_badge": t2_rec.get("free_badge"),
-            "deadline": t2_rec.get("deadline"),
-            "deadline_source": t2_rec.get("deadline_source"),
-            "days_left": t2_rec.get("days_left"),
-            "notes": list(t2_rec.get("notes", [])),
+            "free_badge": source.get("free_badge"),
+            "deadline": deadline,
+            "deadline_source": source.get("deadline_source"),
+            "days_left": days_left,
+            "notes": list(source.get("notes", [])),
         }
 
     return {

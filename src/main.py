@@ -1,9 +1,9 @@
-"""오케스트레이션: 수집 → 정규화 → 저장 (diff·알림은 M2~M4에서 연결). CLI: --collect-only."""
+"""오케스트레이션: 수집 → 정규화 → diff → 저장 (알림은 M3~M4에서 연결). CLI: --collect-only."""
 
 import argparse
 import sys
 
-from . import config, normalize, store
+from . import config, diff, normalize, store
 from .collectors import tier1_api
 
 
@@ -24,6 +24,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="수집 결과 요약만 출력하고 저장하지 않는다",
     )
     return parser.parse_args(argv)
+
+
+def _event_detail(event: dict) -> str:
+    if event["type"] == "countdown":
+        return f" — {event['days_left']}일 남음"
+    if event["type"] == "deadline_new":
+        return f" — 종료일 {event['deadline']}"
+    return ""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -49,9 +57,16 @@ def main(argv: list[str] | None = None) -> int:
 
     prev = store.load_state()
     new_state = normalize.build_state(prev, tier1)
+    events = diff.detect(prev, new_state, threshold_days=cfg.countdown_threshold_days)
+    if events:
+        print(f"[diff] 변경 {len(events)}건 감지")
+        for event in events:
+            print(f"  [{event['type']}] {event['model_id']}{_event_detail(event)}")
+    else:
+        print("[diff] 변경 없음")
     store.save_state(new_state)
     print(f"[저장] state.json 갱신 완료: 모델 {len(new_state['models'])}개")
-    print("[정보] diff·텔레그램 알림 단계는 M2~M4에서 연결된다")
+    print("[정보] 텔레그램 전송은 M3~M4에서 연결된다")
     return 0
 
 

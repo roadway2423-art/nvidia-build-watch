@@ -31,7 +31,7 @@
 |---|---|---|---|---|
 | 1 | §6 `parse_countdown` 4번째 패턴(`available until <날짜>`)의 캡처 그룹이 날짜 문자열이라 `isdigit()`에서 항상 버려짐 — 작동하지 않는 죽은 코드. `from datetime import date`도 미사용 | `src/collectors/tier2_render.py` (M5) | 날짜 패턴은 별도 분기에서 `datetime.strptime`으로 파싱 후 `(deadline - today).days`를 반환 | ☐ |
 | 2 | Appendix B: (1) 429 재시도 3회 소진 후 조용히 종료(알림 유실) (2) 빈 텍스트일 때 `or [""]`가 빈 메시지를 그대로 전송(400 에러) | `src/notify.py` (M4) | 재시도 소진 시 예외 발생(실패를 드러냄), 빈 텍스트는 진입부에서 가드(전송 스킵) | ☐ |
-| 3 | Tier 1 실패·빈 응답 시 diff 엔진이 "전 모델 제거"로 오판 | `src/diff.py` (M2) | `tier1_ok=false`이거나 수집된 모델이 0건이면 diff를 스킵하고 오류 알림만 보낸다 | ☐ |
+| 3 | Tier 1 실패·빈 응답 시 diff 엔진이 "전 모델 제거"로 오판 | `src/main.py`(M1 1차 방어), `src/diff.py`(M2 이중 방어) | `tier1_ok=false`이거나 수집된 모델이 0건이면 diff를 스킵하고 오류 알림만 보낸다 | ☑ 1차(M1) |
 | 4 | §6 "신규 무료 모델"을 `in_api_list` false→true로 판정 — §3.1("이 응답에 무료 여부가 없다")과 자기모순 | `src/diff.py` (M2) | 이벤트 명칭을 "신규 모델 등록"으로 변경. "신규 무료"는 `free_badge` false→true로만 판정 | ☐ |
 
 ### 이 커밋에서 만든 것
@@ -50,3 +50,39 @@
 
 ### 다음 단계
 M1 — Tier 1 수집기 + 상태 저장 (design.md §10.2 1단계 프롬프트 그대로 진행)
+
+---
+
+## 2026-10-11 — M1: Tier 1 수집기 + 상태 저장 구현
+
+### 구현한 것
+| 파일 | 내용 |
+|---|---|
+| `src/config.py` | .env/환경변수 로딩·검증(python-dotenv). TELEGRAM_*은 알림 전송 시점(M4)에만 필요하므로 load 시 필수 아님 — 수정 #9 적용 완료 |
+| `src/collectors/tier1_api.py` | GET /v1/models, 타임아웃 20초, 429/5xx만 2회 재시도(1s→2s), 응답 구조 검증, 예외 대신 결과 객체 반환 |
+| `src/store.py` | state.json 읽기/쓰기 — 임시파일→원자 치환 저장, schema_version 검증, 손상 시 예외 |
+| `src/normalize.py` | Tier1(+Tier2 예정) 병합 → 표준 레코드. first_seen 유지, 미검출 모델 in_api_list=false 유지 |
+| `src/main.py` | 수집→정규화→저장 파이프라인, `--collect-only`, 종료코드 1=수집 실패 |
+
+### 내린 결정 (설계에 명시되지 않은 것)
+1. **Tier 1 실패·모델 0건이면 state.json을 저장하지 않는다** — 수정 #3의 1차 방어.
+   실패한 날의 빈 목록이 스냅샷을 오염시켜 다음 날 오판을 유발하는 것을 원천 차단한다.
+   diff 레벨 가드는 M2에서 이중 방어로 추가한다.
+2. `--collect-only`는 저장도 하지 않는 순수 확인 모드. `--force-notify` 플래그는 M3(메시지 빌더)에서 추가.
+3. 오류의 텔레그램 전송은 M4부터 — M1에서는 stderr + 종료코드로 알린다.
+4. ENABLE_TIER2 기본값은 1(설계)이지만 Tier 2 미구현(M5) — 경고 출력 후 Tier 1만으로 진행(부분 실패 허용).
+5. **콘솔 인코딩 방어**(main.py `_force_utf8_streams`): 개발 머신이 cp949(한글 Windows)인데
+   Kilo/CI 캡처 환경은 UTF-8로 디코딩해 한글 로그가 깨졌다. 파이프(비-tty) 스트림만 UTF-8로
+   재구성하고 대화형 콘솔은 건드리지 않는다.
+
+### 구조 추가 (§9 대비)
+- `tests/test_tier1_api.py`, `tests/test_store.py` — 파싱·저장 회귀 테스트 (픽스처 기반, 네트워크 없음)
+
+### 검증 결과
+- `pytest`: 16개 전부 통과 / `ruff check .`: 클린
+- 실측: `--collect-only`로 80개 수집 확인, 정상 실행으로 state.json에 80개 레코드 저장 확인
+  (tier1_ok=true, updated_at KST) → **M1 완료 기준 충족**
+- 개발 머신 venv: Python 3.14.7. `playwright install chromium`(브라우저)은 M5 전까지 불필요하여 미실행.
+
+### 다음 단계
+M2 — diff 엔진 + 테스트 (수정 #3 이중 방어, #4 이벤트 명칭 정정 포함)

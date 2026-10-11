@@ -55,9 +55,9 @@ cp .env.example .env
 
 ```powershell
 pytest -q                                             # 픽스처 기반 로직 테스트
-$env:DRY_RUN="1"; python -m src.main --collect-only  # 수집만 확인 (알림 없음)
-$env:DRY_RUN="1"; python -m src.main --force-notify   # 메시지 미리보기
-python -m src.main                                    # 실제 전송
+$env:DRY_RUN="1"; python -m src.main --collect-only  # 수집만 확인 (저장·알림 없음)
+$env:DRY_RUN="1"; python -m src.main --force-notify   # 메시지 미리보기 (M3에서 추가)
+python -m src.main                                    # 실행 (텔레그램 전송은 M4부터)
 ```
 
 ## 롤백 (git)

@@ -54,10 +54,11 @@ cp .env.example .env
 ## 실행 / 테스트 (PowerShell)
 
 ```powershell
-pytest -q                                             # 픽스처 기반 로직 테스트
-$env:DRY_RUN="1"; python -m src.main --collect-only  # 수집만 확인 (저장·알림 없음)
-$env:DRY_RUN="1"; python -m src.main --force-notify   # 메시지 미리보기 (M3에서 추가)
-python -m src.main                                    # 실행 (텔레그램 전송은 M4부터)
+pytest -q                                              # 픽스처 기반 로직 테스트
+$env:DRY_RUN="1"; python -m src.main --collect-only   # 수집만 확인 (저장·알림 없음)
+$env:DRY_RUN="1"; python -m src.main --force-notify    # 메시지 미리보기 (전송·저장 없음)
+python -m src.main --force-notify                      # 변경 없어도 상태 메시지 강제 전송
+python -m src.main                                     # 실행 (변경 시 텔레그램 전송 + state 저장)
 ```
 
 ## 롤백 (git)

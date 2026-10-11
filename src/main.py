@@ -1,9 +1,9 @@
-"""오케스트레이션: 수집 → 정규화 → diff → 저장 (알림은 M3~M4에서 연결). CLI: --collect-only."""
+"""오케스트레이션: 수집 → 정규화 → diff → 알림 → 저장. CLI: --collect-only, --force-notify."""
 
 import argparse
 import sys
 
-from . import config, diff, normalize, store
+from . import config, diff, message, normalize, notify, store
 from .collectors import tier1_api
 
 
@@ -22,6 +22,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--collect-only",
         action="store_true",
         help="수집 결과 요약만 출력하고 저장하지 않는다",
+    )
+    parser.add_argument(
+        "--force-notify",
+        action="store_true",
+        help="변경이 없어도 상태 메시지를 만들어 전송한다",
     )
     return parser.parse_args(argv)
 
@@ -64,9 +69,36 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  [{event['type']}] {event['model_id']}{_event_detail(event)}")
     else:
         print("[diff] 변경 없음")
+
+    if events or args.force_notify:
+        text = message.build(events, new_state)
+        if cfg.dry_run:
+            print("[알림] DRY_RUN — 전송 대신 미리보기:")
+            print(text)
+        elif not (cfg.telegram_bot_token and cfg.telegram_chat_id):
+            print("[오류] TELEGRAM_BOT_TOKEN/CHAT_ID 미설정 — 전송 불가", file=sys.stderr)
+            print("[오류] DRY_RUN=1으로 미리보기하거나 .env을 채우세요", file=sys.stderr)
+            return 1
+        else:
+            try:
+                sent = notify.send_message(
+                    text,
+                    token=cfg.telegram_bot_token,
+                    chat_id=cfg.telegram_chat_id,
+                )
+            except Exception as e:
+                print(f"[오류] 텔레그램 전송 실패: {type(e).__name__}: {e}", file=sys.stderr)
+                print("[오류] state.json 미저장 종료 — 다음 실행에서 재시도", file=sys.stderr)
+                return 1
+            print(f"[알림] 텔레그램 전송 완료 ({sent}청크)")
+            diff.apply_last_notified(new_state, events)
+
+    if cfg.dry_run:
+        print("[정보] DRY_RUN — state.json을 저장하지 않고 종료한다")
+        return 0
+
     store.save_state(new_state)
     print(f"[저장] state.json 갱신 완료: 모델 {len(new_state['models'])}개")
-    print("[정보] 텔레그램 전송은 M3~M4에서 연결된다")
     return 0
 
 

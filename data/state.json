@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-11T21:05:23+09:00",
+  "updated_at": "2026-10-11T21:59:58+09:00",
   "tier1_ok": true,
   "tier2_ok": false,
   "models": {
@@ -1045,5 +1045,7 @@
       "notes": []
     }
   },
-  "last_notified": {}
+  "last_notified": {
+    "countdown": {}
+  }
 }

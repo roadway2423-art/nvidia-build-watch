@@ -30,7 +30,7 @@
 | # | 설계서의 문제 | 적용 위치(예정) | 어떻게 고칠 것인가 | 상태 |
 |---|---|---|---|---|
 | 1 | §6 `parse_countdown` 4번째 패턴(`available until <날짜>`)의 캡처 그룹이 날짜 문자열이라 `isdigit()`에서 항상 버려짐 — 작동하지 않는 죽은 코드. `from datetime import date`도 미사용 | `src/collectors/tier2_render.py` (M5) | 날짜 패턴은 별도 분기에서 `datetime.strptime`으로 파싱 후 `(deadline - today).days`를 반환 | ☐ |
-| 2 | Appendix B: (1) 429 재시도 3회 소진 후 조용히 종료(알림 유실) (2) 빈 텍스트일 때 `or [""]`가 빈 메시지를 그대로 전송(400 에러) | `src/notify.py` (M4) | 재시도 소진 시 예외 발생(실패를 드러냄), 빈 텍스트는 진입부에서 가드(전송 스킵) | ☐ |
+| 2 | Appendix B: (1) 429 재시도 3회 소진 후 조용히 종료(알림 유실) (2) 빈 텍스트일 때 `or [""]`가 빈 메시지를 그대로 전송(400 에러) | `src/notify.py` (M3) | 재시도 소진 시 예외 발생(실패를 드러냄), 빈 텍스트는 진입부에서 가드(전송 스킵) | ☑ M3 적용 |
 | 3 | Tier 1 실패·빈 응답 시 diff 엔진이 "전 모델 제거"로 오판 | `src/main.py`(M1 1차 방어), `src/diff.py`(M2 이중 방어) | `tier1_ok=false`이거나 수집된 모델이 0건이면 diff를 스킵하고 오류 알림만 보낸다 | ☑ 완료(M1+M2) |
 | 4 | §6 "신규 무료 모델"을 `in_api_list` false→true로 판정 — §3.1("이 응답에 무료 여부가 없다")과 자기모순 | `src/diff.py` (M2) | 이벤트 명칭을 "신규 모델 등록"으로 변경. "신규 무료"는 `free_badge` false→true로만 판정 | ☑ M2 적용 |
 
@@ -122,3 +122,34 @@ M2 — diff 엔진 + 테스트 (수정 #3 이중 방어, #4 이벤트 명칭 정
 
 ### 다음 단계
 M3 — 메시지 빌더 + 텔레그램 전송 (`--force-notify` 추가, apply_last_notified 연결)
+
+---
+
+## 2026-10-11 — M3: 메시지 빌더 + 텔레그램 전송 (수정 #2 적용 완료)
+
+### 구현한 것
+| 파일 | 내용 |
+|---|---|
+| `src/message.py` | §7.2 고정 포맷 빌더 — 신규/종료 예고/제거/무료→유료 순서, "(무료 배지)" 주석, 이벤트 없으면 '변경 없음' 상태 메시지 |
+| `src/notify.py` | sendMessage 클라이언트 — 4000자 분할, 429 retry_after 대기 후 3회 재시도, 소진 시 RuntimeError(수정 #2-1), 빈 텍스트 가드(수정 #2-2), DRY_RUN 표준출력 전환 |
+| `src/main.py` | 알림 연결 — detect → build → send → apply_last_notified → save (§4 순서). `--force-notify` 추가 |
+| `tests/test_message.py`·`tests/test_notify.py` | 포맷 스냅샷 3건 + 분할·가드·429 소진 7건 (네트워크 없음, monkeypatch) |
+
+### 내린 결정
+1. **전송 실패 시 state 미저장** — 다음 실행에서 같은 이벤트가 재감지·재전송된다(at-least-once).
+   `apply_last_notified`는 전송 성공 후에만 호출한다 (M2 규약 준수)
+2. **DRY_RUN은 부작용 0** — 미리보기만 하고 state.json을 저장하지 않는다.
+   미리보기 실행이 실제 이벤트를 삼켜 알림을 유실시키는 사고를 원천 방지
+3. TELEGRAM_* 미설정 + 전송 필요 → 종료코드 1 (조용한 실패 금지). DRY_RUN이면 토큰 없이 미리보기
+4. 푸터 "총 N개 모델"은 in_api_list=true 개수 기준 — 제거 이력이 카운트를 부풀리지 않게
+5. new_model의 "(무료 배지)" 주석은 새 상태의 free_badge=true일 때만 표시 (§7.2 예시 형식 준수)
+
+### 검증 결과
+- `pytest`: 42개 전부 통과 / `ruff check .`: 클린
+- DRY_RUN `--force-notify` 미리보기: §7.2 포맷 정확히 일치 확인
+- **실전 테스트**: state.json에서 `z-ai/glm-5.3`을 의도 삭제 후 실제 실행 →
+  `[new_model]` 이벤트 감지 → 실제 텔레그램 전송(1청크) → state가 80개로 자동 복구됨.
+  텔레그램 수신 메시지가 §7.2 포맷과 일치 → **M3 완료 기준 충족**
+
+### 다음 단계
+M4 — GitHub Actions 연결 (워크플로 수동 실행 → state 커밋·push 확인)
